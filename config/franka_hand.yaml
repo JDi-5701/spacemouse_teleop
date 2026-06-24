@@ -1,0 +1,19 @@
+# Franka Hand (gripper) button control — independent of the arm controller, so the
+# same file is used whether the arm runs the impedance or the admittance node.
+# Loaded by gripper_teleop only (see teleop.launch.py: hand_config arg).
+gripper_teleop:
+  ros__parameters:
+    button_topic: "/spacemouse/buttons"
+    open_button: 0             # left button  -> open (Move)
+    close_button: 1            # right button -> close (Grasp, holds force)
+    gripper_ns: "/franka_gripper"
+    # Ranges below = Franka Hand hardware limits (libfranka API itself documents no
+    # caps). Stroke 80 mm; finger 50 mm/s -> width speed ~0.1 m/s; force 70 N
+    # continuous / 140 N peak; libfranka defaults speed 0.1, force 60, epsilon 0.005.
+    open_width: 0.08           # Move.width  [m], 0 .. 0.08 (max stroke)
+    open_speed: 0.1            # Move.speed  [m/s], up to ~0.1
+    grasp_width: 0.0           # Grasp.width [m], 0 .. 0.08 (0 = close fully)
+    grasp_speed: 0.1           # Grasp.speed [m/s], up to ~0.1
+    grasp_force: 40.0          # Grasp.force [N], up to 70 continuous (140 peak)
+    grasp_epsilon_inner: 0.08  # success tolerance [m]; large = grasp always "succeeds"
+    grasp_epsilon_outer: 0.08

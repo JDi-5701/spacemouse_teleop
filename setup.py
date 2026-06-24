@@ -24,6 +24,7 @@ setup(
         'console_scripts': [
             'spacemouse_driver = spacemouse_teleop.spacemouse_driver:main',
             'teleop_interface = spacemouse_teleop.teleop_interface:main',
+            'gripper_teleop = spacemouse_teleop.gripper_teleop:main',
         ],
     },
 )

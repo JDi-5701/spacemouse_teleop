@@ -26,3 +26,7 @@ teleop_interface:
     ang_scale: 0.06
     sm_axis_sign: [-1.0, -1.0, -1.0, -1.0, 1.0, 1.0]
     deadzone: 0.05
+
+# Hand teleop (gripper button client) params are in config/franka_hand.yaml, launched by
+# hand_teleop.launch.py. The gripper SERVER (hardware) is robot-side in
+# franka_cartesian_impedance_node (gripper_server.launch.py).
