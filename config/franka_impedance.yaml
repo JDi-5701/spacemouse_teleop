@@ -1,0 +1,28 @@
+# SpaceMouse teleop for the Franka BUILT-IN Cartesian impedance (cartesian_impedance_node).
+# pose mode: integrate the equilibrium client-side and publish an absolute pose to the
+# impedance controller's ~/target_pose. The built-in (true) impedance renders the spring
+# about it -> naturally stable on contact (yields, no smash), unlike the admittance node.
+spacemouse_driver:
+  ros__parameters:
+    raw_topic: "/spacemouse/raw_command"
+    button_topic: "/spacemouse/buttons"
+    rate_hz: 100.0
+    static_eps: 0.5
+    calib_samples: 5
+
+teleop_interface:
+  ros__parameters:
+    output_mode: "pose"
+    spacemouse_topic: "/spacemouse/raw_command"
+    pose_topic: "/cartesian_impedance_node/current_pose"
+    cmd_topic: "/cartesian_impedance_node/target_pose"
+    reset_topic: "/reset_teleop"
+    force_topic: "/cartesian_impedance_node/ext_wrench"
+    frame_id: "base"
+    force_limit: 15.0          # block driving the equilibrium deeper into a contact past ~N
+    enable_force_limit: true
+    target_hz: 100.0
+    lin_scale: 0.06
+    ang_scale: 0.06
+    sm_axis_sign: [-1.0, -1.0, -1.0, -1.0, 1.0, 1.0]
+    deadzone: 0.05

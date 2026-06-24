@@ -1,0 +1,21 @@
+# SpaceMouse teleop config for the Franka admittance node.
+# twist mode: the admittance_node OWNS the equilibrium and integrates this twist.
+spacemouse_driver:
+  ros__parameters:
+    raw_topic: "/spacemouse/raw_command"
+    button_topic: "/spacemouse/buttons"
+    rate_hz: 100.0
+    static_eps: 0.5
+    calib_samples: 5
+
+teleop_interface:
+  ros__parameters:
+    output_mode: "twist"
+    spacemouse_topic: "/spacemouse/raw_command"
+    cmd_twist_topic: "/admittance_node/cmd_twist"
+    # SpaceMouse units -> m/s and rad/s (integrated by the node).
+    lin_scale: 0.02
+    ang_scale: 0.0001
+    # per-axis sign/mapping [lx, ly, lz, ax, ay, az]; flip per mounting if inverted.
+    sm_axis_sign: [-1.0, -1.0, -1.0, -1.0, 1.0, 1.0]
+    deadzone: 0.05   # SpaceMouse units below this -> 0 (no resting drift)

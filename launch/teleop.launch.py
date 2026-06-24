@@ -11,8 +11,9 @@ def generate_launch_description():
     share = get_package_share_directory('spacemouse_teleop')
 
     # 'robot' picks config/<robot>.yaml; 'config' can override with a full path.
-    robot_arg = DeclareLaunchArgument('robot', default_value='franka',
-                                      description='franka | kuka (selects config/<robot>.yaml)')
+    robot_arg = DeclareLaunchArgument('robot', default_value='franka_impedance',
+                                      description='franka_impedance | franka_admittance | kuka '
+                                                  '(selects config/<robot>.yaml)')
     default_cfg = PythonExpression(
         ["'", os.path.join(share, 'config'), "/' + '", LaunchConfiguration('robot'), "' + '.yaml'"])
     config_arg = DeclareLaunchArgument('config', default_value=default_cfg,

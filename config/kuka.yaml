@@ -1,4 +1,6 @@
-# SpaceMouse teleop config for the KUKA (FRI) setup — the original validated values.
+# SpaceMouse teleop config for the KUKA (FRI) setup.
+# pose mode: integrate the equilibrium client-side and publish an absolute pose, since
+# the KUKA bridge takes an absolute equilibrium pose. (Original validated values.)
 spacemouse_driver:
   ros__parameters:
     raw_topic: "/spacemouse/raw_command"
@@ -9,15 +11,17 @@ spacemouse_driver:
 
 teleop_interface:
   ros__parameters:
+    output_mode: "pose"
+    spacemouse_topic: "/spacemouse/raw_command"
     pose_topic: "/world/tcp_pose"
     cmd_topic: "/world/tcp_command"
-    spacemouse_topic: "/spacemouse/raw_command"
     reset_topic: "/reset_kuka"
     force_topic: "/world/ft_data"
     frame_id: "world_frame"
     force_limit: 20.0
     enable_force_limit: true
+    target_hz: 100.0
     lin_scale: 0.02
     ang_scale: 0.0001
-    target_hz: 15.0
     sm_axis_sign: [-1.0, -1.0, -1.0, -1.0, 1.0, 1.0]
+    deadzone: 0.05   # SpaceMouse units below this -> 0 (no resting drift)
