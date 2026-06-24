@@ -1,0 +1,27 @@
+# SpaceMouse teleop config for the Franka admittance node.
+spacemouse_driver:
+  ros__parameters:
+    raw_topic: "/spacemouse/raw_command"
+    button_topic: "/spacemouse/buttons"
+    rate_hz: 100.0
+    static_eps: 0.5
+    calib_samples: 5
+
+teleop_interface:
+  ros__parameters:
+    # Topics wired to franka_cartesian_impedance_node/admittance_node.
+    pose_topic: "/admittance_node/current_pose"
+    cmd_topic: "/admittance_node/target_pose"
+    spacemouse_topic: "/spacemouse/raw_command"
+    reset_topic: "/reset_franka"
+    force_topic: "/admittance_node/ext_wrench"
+    frame_id: "base"
+    # Tuning (start from the KUKA-validated values; retune on Franka).
+    force_limit: 20.0
+    enable_force_limit: true
+    lin_scale: 0.02
+    ang_scale: 0.0001
+    target_hz: 15.0
+    # SpaceMouse axis sign/mapping [lx, ly, lz, ax, ay, az]. Flip per mounting if a
+    # direction feels inverted on the Franka.
+    sm_axis_sign: [-1.0, -1.0, -1.0, -1.0, 1.0, 1.0]

@@ -1,0 +1,23 @@
+# SpaceMouse teleop config for the KUKA (FRI) setup — the original validated values.
+spacemouse_driver:
+  ros__parameters:
+    raw_topic: "/spacemouse/raw_command"
+    button_topic: "/spacemouse/buttons"
+    rate_hz: 100.0
+    static_eps: 0.5
+    calib_samples: 5
+
+teleop_interface:
+  ros__parameters:
+    pose_topic: "/world/tcp_pose"
+    cmd_topic: "/world/tcp_command"
+    spacemouse_topic: "/spacemouse/raw_command"
+    reset_topic: "/reset_kuka"
+    force_topic: "/world/ft_data"
+    frame_id: "world_frame"
+    force_limit: 20.0
+    enable_force_limit: true
+    lin_scale: 0.02
+    ang_scale: 0.0001
+    target_hz: 15.0
+    sm_axis_sign: [-1.0, -1.0, -1.0, -1.0, 1.0, 1.0]
