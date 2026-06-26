@@ -63,6 +63,16 @@ class TeleopInterface(Node):
             self.cmd_quat = None
             self.latest_force = np.zeros(3)
 
+            # The controller owns the lock and publishes its mode on ~/control_state. Teleop
+            # RESPECTS it: while the controller is NOT in TOPIC (i.e. HOMING/GUARD) we re-anchor
+            # the equilibrium to the measured pose so control hands back smoothly (no need to
+            # release the SpaceMouse). Falls back to idle-only re-anchoring if the ControlState
+            # msg/topic is absent (e.g. a non-Franka controller).
+            self.control_state_topic = self.declare_parameter(
+                'control_state_topic', '/cartesian_impedance_node/control_state').value
+            self.ctrl_state = 'GUARD'      # assume "not in control" until told otherwise (safe)
+            self.use_ctrl_state = self._sub_control_state()
+
             self.create_subscription(PoseStamped, self.pose_sub_topic, self.pose_callback, 10)
             self.create_subscription(WrenchStamped, self.ft_sub_topic, self.ft_callback, 10)
             self.cmd_pub = self.create_publisher(PoseStamped, self.cmd_pub_topic, 10)
@@ -87,6 +97,26 @@ class TeleopInterface(Node):
     def ft_callback(self, msg):
         self.latest_force = np.array([msg.wrench.force.x, msg.wrench.force.y, msg.wrench.force.z])
 
+    def _sub_control_state(self):
+        """Subscribe to the controller's ~/control_state (latched). Returns True if available;
+        False (-> idle-only re-anchor fallback) if the msg pkg / topic is absent."""
+        try:
+            from franka_cartesian_impedance_msgs.msg import ControlState
+        except Exception as e:  # noqa - non-Franka controller / msg pkg not built
+            self.get_logger().warn(
+                f'ControlState unavailable ({e}); re-anchoring on idle only')
+            return False
+        from rclpy.qos import QoSProfile, DurabilityPolicy, HistoryPolicy
+        qos = QoSProfile(depth=1, history=HistoryPolicy.KEEP_LAST,
+                         durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(ControlState, self.control_state_topic,
+                                 self._control_state_cb, qos)
+        self.get_logger().info(f'respecting controller state on {self.control_state_topic}')
+        return True
+
+    def _control_state_cb(self, msg):
+        self.ctrl_state = msg.state
+
     def pose_callback(self, msg):
         self.curr_pos = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
         self.curr_quat = np.array([msg.pose.orientation.x, msg.pose.orientation.y,
@@ -98,16 +128,21 @@ class TeleopInterface(Node):
     def pose_loop(self):
         if self.cmd_pos is None:
             return
-        # IDLE -> re-anchor the equilibrium to the measured pose. So teleop never commands a
-        # far jump: after a controller homing (go_home/go_pose) the equilibrium follows the
-        # robot to the new pose, the controller's GUARD sees a near target and hands control
-        # back. No /reset_teleop and no controller<->teleop coupling -- the controller owns the
-        # lock; we just publish. (While ACTIVE, integrate deltas as usual.)
+        # Respect the controller's lock:
+        #   - NOT following us (HOMING/GUARD): re-anchor the equilibrium to the measured pose so
+        #     our command tracks the robot -> the controller hands control back the moment GUARD
+        #     sees a near target (no need to release the SpaceMouse).
+        #   - TOPIC (following): integrate deltas when active; HOLD the equilibrium when idle so
+        #     a pushed-to offset persists.
+        # Fallback (no ControlState): treat as following and re-anchor only on idle.
         active = float(np.linalg.norm(self.latest_sm)) > 1e-9
-        if not active:
+        following = (self.ctrl_state == 'TOPIC') if self.use_ctrl_state else True
+        reanchor = (not following) if self.use_ctrl_state else (not active)
+
+        if reanchor:
             self.cmd_pos = self.curr_pos.copy()
             self.cmd_quat = self.curr_quat.copy()
-        else:
+        elif active:
             r_base = R.from_quat(self.cmd_quat)      # equilibrium orientation
             delta_lin = self.latest_sm[0:3] * self.lin_scale * self.dt
             if self.enable_force_limit:
@@ -121,6 +156,7 @@ class TeleopInterface(Node):
             delta_rot = self.latest_sm[3:6] * self.ang_scale * self.dt
             if np.linalg.norm(delta_rot) > 1e-9:
                 self.cmd_quat = (r_base * R.from_rotvec(delta_rot)).as_quat()
+        # else (following + idle): hold the current equilibrium
 
         msg = PoseStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
