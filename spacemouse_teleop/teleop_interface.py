@@ -20,7 +20,6 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Twist, WrenchStamped
-from std_msgs.msg import Bool
 from scipy.spatial.transform import Rotation as R
 
 
@@ -51,7 +50,6 @@ class TeleopInterface(Node):
         else:  # pose mode (client owns the equilibrium)
             self.pose_sub_topic = self.declare_parameter('pose_topic', '/world/tcp_pose').value
             self.cmd_pub_topic = self.declare_parameter('cmd_topic', '/world/tcp_command').value
-            self.reset_sub_topic = self.declare_parameter('reset_topic', '/reset_teleop').value
             self.ft_sub_topic = self.declare_parameter('force_topic', '/world/ft_data').value
             self.frame_id = self.declare_parameter('frame_id', 'world_frame').value
             self.force_limit = self.declare_parameter('force_limit', 20.0).value
@@ -64,15 +62,14 @@ class TeleopInterface(Node):
             self.cmd_pos = None      # the virtual equilibrium (integrated client-side)
             self.cmd_quat = None
             self.latest_force = np.zeros(3)
-            self.stop_publishing = False
 
             self.create_subscription(PoseStamped, self.pose_sub_topic, self.pose_callback, 10)
-            self.create_subscription(Bool, self.reset_sub_topic, self.reset_callback, 10)
             self.create_subscription(WrenchStamped, self.ft_sub_topic, self.ft_callback, 10)
             self.cmd_pub = self.create_publisher(PoseStamped, self.cmd_pub_topic, 10)
             self.timer = self.create_timer(self.dt, self.pose_loop)
             self.get_logger().info(f'Teleop [pose] {self.pose_sub_topic} -> {self.cmd_pub_topic} '
-                                   f'(client owns the equilibrium, frame={self.frame_id})')
+                                   f'(idle re-anchors to current; controller owns the lock, '
+                                   f'frame={self.frame_id})')
 
     def sm_callback(self, msg):
         raw = np.array([msg.linear.x, msg.linear.y, msg.linear.z,
@@ -90,15 +87,6 @@ class TeleopInterface(Node):
     def ft_callback(self, msg):
         self.latest_force = np.array([msg.wrench.force.x, msg.wrench.force.y, msg.wrench.force.z])
 
-    def reset_callback(self, msg):
-        if msg.data:
-            self.stop_publishing = True
-            if self.curr_pos is not None:
-                self.cmd_pos = self.curr_pos.copy()
-                self.cmd_quat = self.curr_quat.copy()
-        else:
-            self.stop_publishing = False
-
     def pose_callback(self, msg):
         self.curr_pos = np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z])
         self.curr_quat = np.array([msg.pose.orientation.x, msg.pose.orientation.y,
@@ -108,21 +96,31 @@ class TeleopInterface(Node):
             self.cmd_quat = self.curr_quat.copy()
 
     def pose_loop(self):
-        if self.cmd_pos is None or self.stop_publishing:
+        if self.cmd_pos is None:
             return
-        r_base = R.from_quat(self.cmd_quat)          # equilibrium orientation
-        delta_lin = self.latest_sm[0:3] * self.lin_scale * self.dt
-        if self.enable_force_limit:
-            for i in range(3):
-                f_val, v_val = self.latest_force[i], delta_lin[i]
-                if f_val < -self.force_limit and v_val > 0:
-                    delta_lin[i] = 0.0
-                elif f_val > self.force_limit and v_val < 0:
-                    delta_lin[i] = 0.0
-        self.cmd_pos += r_base.apply(delta_lin)
-        delta_rot = self.latest_sm[3:6] * self.ang_scale * self.dt
-        if np.linalg.norm(delta_rot) > 1e-9:
-            self.cmd_quat = (r_base * R.from_rotvec(delta_rot)).as_quat()
+        # IDLE -> re-anchor the equilibrium to the measured pose. So teleop never commands a
+        # far jump: after a controller homing (go_home/go_pose) the equilibrium follows the
+        # robot to the new pose, the controller's GUARD sees a near target and hands control
+        # back. No /reset_teleop and no controller<->teleop coupling -- the controller owns the
+        # lock; we just publish. (While ACTIVE, integrate deltas as usual.)
+        active = float(np.linalg.norm(self.latest_sm)) > 1e-9
+        if not active:
+            self.cmd_pos = self.curr_pos.copy()
+            self.cmd_quat = self.curr_quat.copy()
+        else:
+            r_base = R.from_quat(self.cmd_quat)      # equilibrium orientation
+            delta_lin = self.latest_sm[0:3] * self.lin_scale * self.dt
+            if self.enable_force_limit:
+                for i in range(3):
+                    f_val, v_val = self.latest_force[i], delta_lin[i]
+                    if f_val < -self.force_limit and v_val > 0:
+                        delta_lin[i] = 0.0
+                    elif f_val > self.force_limit and v_val < 0:
+                        delta_lin[i] = 0.0
+            self.cmd_pos = self.cmd_pos + r_base.apply(delta_lin)
+            delta_rot = self.latest_sm[3:6] * self.ang_scale * self.dt
+            if np.linalg.norm(delta_rot) > 1e-9:
+                self.cmd_quat = (r_base * R.from_rotvec(delta_rot)).as_quat()
 
         msg = PoseStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
