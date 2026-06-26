@@ -15,7 +15,7 @@ node works for any gripper that exposes franka_msgs Move/Grasp actions.
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
-from std_msgs.msg import Int8MultiArray
+from std_msgs.msg import Int8MultiArray, Float64
 
 from franka_msgs.action import Move, Grasp
 
@@ -46,13 +46,32 @@ class GripperTeleop(Node):
         self.move_client = ActionClient(self, Move, f'{gripper_ns}/move')
         self.grasp_client = ActionClient(self, Grasp, f'{gripper_ns}/grasp')
 
+        # --- latched gripper COMMAND for data recording -----------------------------
+        # The gripper itself is action-driven and slow (~2 s), but the *commanded* state is
+        # instantaneous and binary. Publish it as a single normalized scalar (open/close) at a
+        # steady rate so a LeRobot recorder can sample it as the gripper action dim (pi0.5
+        # convention: one gripper value appended to the action vector).
+        self.cmd_topic = self.declare_parameter('gripper_command_topic', '/gripper_command').value
+        self.open_value = float(self.declare_parameter('gripper_open_value', 1.0).value)
+        self.close_value = float(self.declare_parameter('gripper_close_value', 0.0).value)
+        cmd_rate = float(self.declare_parameter('gripper_command_rate', 30.0).value)
+        # assume the gripper starts open (typical after homing); updated on first press
+        self._gripper_cmd = self.open_value
+        self.cmd_pub = self.create_publisher(Float64, self.cmd_topic, 10)
+        self.create_timer(1.0 / max(1.0, cmd_rate), self._publish_cmd)
+
         self.prev = {}          # button index -> last raw value (for rising-edge)
         self.busy = False       # one gripper action at a time
 
         self.create_subscription(Int8MultiArray, self.button_topic, self.button_callback, 10)
         self.get_logger().info(
             f'gripper_teleop: button[{self.open_button}]=open -> {gripper_ns}/move, '
-            f'button[{self.close_button}]=close -> {gripper_ns}/grasp')
+            f'button[{self.close_button}]=close -> {gripper_ns}/grasp; '
+            f'command -> {self.cmd_topic} (open={self.open_value}, close={self.close_value})')
+
+    def _publish_cmd(self):
+        """Continuously publish the latched gripper command so the recorder always has it."""
+        self.cmd_pub.publish(Float64(data=float(self._gripper_cmd)))
 
     def _rising_edge(self, buttons, idx):
         """True only on the 0->1 transition of button idx."""
@@ -82,6 +101,7 @@ class GripperTeleop(Node):
         goal = Move.Goal()
         goal.width = self.open_width
         goal.speed = self.open_speed
+        self._gripper_cmd = self.open_value      # latch commanded state for recording
         self.get_logger().info(f'OPEN -> width={self.open_width:.3f} speed={self.open_speed:.3f}')
         self._send(self.move_client, goal)
 
@@ -95,6 +115,7 @@ class GripperTeleop(Node):
         goal.force = self.grasp_force
         goal.epsilon.inner = self.grasp_eps_inner
         goal.epsilon.outer = self.grasp_eps_outer
+        self._gripper_cmd = self.close_value     # latch commanded state for recording
         self.get_logger().info(f'CLOSE -> width={self.grasp_width:.3f} force={self.grasp_force:.1f}')
         self._send(self.grasp_client, goal)
 
